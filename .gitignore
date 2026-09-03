@@ -1,6 +1,14 @@
 node_modules/
 dist/
 coverage/
+
+# Local biometric test images must never be committed (privacy: face data).
+fixtures/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.heic
 *.log
 .env
 .env.*
