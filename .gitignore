@@ -1,6 +1,19 @@
 node_modules/
 dist/
 coverage/
+
+# Local biometric test images must never be committed (privacy: face data).
+# Keep your own selfies under fixtures/ (git-ignored).
+fixtures/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.heic
+
+# Exception: the bundled, AI-generated sample face used by the examples
+# (synthetic, not a real person; licensed for testing).
+!examples/faces/generated-test-face.jpg
 *.log
 .env
 .env.*

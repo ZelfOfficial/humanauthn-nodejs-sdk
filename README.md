@@ -101,8 +101,34 @@ npm run build      # compile TypeScript to dist/
 npm run typecheck  # type-check without emitting
 npm run lint       # ESLint
 npm test           # run the vitest suite
-npm run demo       # end-to-end example against a local mock server
-npm run verify:real # smoke-test auth against the real Verifik API (needs VERIFIK_CLIENT_JWT)
+  npm run demo       # end-to-end example against a local mock server
+  npm run verify:real # smoke-test auth against the real Verifik API (needs VERIFIK_CLIENT_JWT)
+  npm run verify:roundtrip # enroll + authenticate a real face (see below)
+```
+
+### Testing with a real face
+
+`npm run verify:roundtrip` runs a full enroll → preview → authenticate cycle. By
+default it uses the bundled **AI-generated synthetic** face at
+[`examples/faces/generated-test-face.jpg`](examples/faces/generated-test-face.jpg)
+(not a real person; licensed for testing).
+
+```bash
+# Default synthetic face, against a local mock (no credentials):
+npm run verify:roundtrip
+
+# Against the real Verifik API (charges credits):
+VERIFIK_CLIENT_JWT=<token> npm run verify:roundtrip
+```
+
+To use a different face, supply it **locally** — it is never committed (face
+images are biometric data, and `fixtures/` plus image files are git-ignored).
+Use your own face or a licensed/synthetic one; do not commit other people's faces.
+
+```bash
+HUMANAUTHN_FACE_IMAGE=./fixtures/me.jpg npm run verify:roundtrip
+# or a pre-encoded image:
+HUMANAUTHN_FACE_BASE64=<base64> npm run verify:roundtrip
 ```
 
 The test suite injects a mock transport, so it runs fully offline. The

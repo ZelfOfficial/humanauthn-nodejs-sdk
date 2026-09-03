@@ -44,6 +44,7 @@
     "example": "tsx examples/quickstart.ts",
     "demo": "tsx examples/quickstart.ts",
     "verify:real": "tsx examples/verify-real-api.ts",
+    "verify:roundtrip": "tsx examples/real-roundtrip.ts",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {
