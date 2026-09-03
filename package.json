@@ -1,0 +1,57 @@
+{
+  "name": "humanauthn-nodejs-sdk",
+  "version": "0.1.0",
+  "description": "Node.js SDK for the online (HTTP API) version of HumanAuthn by Verifik.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Zelf",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZelfOfficial/humanauthn-nodejs-sdk.git"
+  },
+  "keywords": [
+    "humanauthn",
+    "verifik",
+    "biometric",
+    "authentication",
+    "zelf",
+    "sdk"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "example": "tsx examples/quickstart.ts",
+    "demo": "tsx examples/quickstart.ts",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  }
+}

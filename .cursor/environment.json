@@ -1,0 +1,4 @@
+{
+  "name": "humanauthn-nodejs-sdk",
+  "install": "npm ci && npm run build"
+}
