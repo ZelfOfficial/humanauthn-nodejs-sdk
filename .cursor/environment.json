@@ -1,4 +1,8 @@
 {
   "name": "humanauthn-nodejs-sdk",
+  "user": "node",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "install": "npm ci && npm run build"
 }
