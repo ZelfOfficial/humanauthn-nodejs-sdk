@@ -15,7 +15,7 @@ export interface HttpClientConfig {
   defaultHeaders: Record<string, string>;
 }
 
-const SDK_VERSION = "0.1.0";
+const SDK_VERSION = "0.1.1";
 
 /** Small typed HTTP transport with timeouts, retries, and error mapping. */
 export class HttpClient {
