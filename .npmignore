@@ -1,0 +1,11 @@
+src/
+test/
+examples/
+node_modules/
+coverage/
+tsconfig*.json
+eslint.config.js
+vitest.config.ts
+.gitignore
+*.tsbuildinfo
+.github/
