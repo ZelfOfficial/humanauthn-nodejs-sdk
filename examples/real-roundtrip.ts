@@ -1,8 +1,9 @@
 /**
  * Real HumanID round-trip: enroll a face, then authenticate with it.
  *
- * The selfie is supplied locally and is never committed to the repo (face
- * images are biometric data; see .gitignore). Provide it one of two ways:
+ * By default it uses the bundled AI-generated synthetic face
+ * (./faces/generated-test-face.jpg). To use a different face, supply it locally
+ * (it is never committed - face images are biometric data; see .gitignore):
  *
  *   HUMANAUTHN_FACE_IMAGE=/absolute/path/to/your-selfie.jpg
  *   # or a pre-encoded base64 string:
@@ -10,28 +11,23 @@
  *
  * Against the real Verifik API (charges credits), set your client JWT:
  *
- *   VERIFIK_CLIENT_JWT=<token> HUMANAUTHN_FACE_IMAGE=./fixtures/me.jpg \
- *     npm run verify:roundtrip
+ *   VERIFIK_CLIENT_JWT=<token> npm run verify:roundtrip
  *
  * With no JWT it runs against a local in-process mock so you can validate the
  * wiring (the mock hashes the image bytes rather than doing real face matching).
  */
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { HumanAuthnClient } from "../src/index.js";
 import { startMockServer, type MockServerHandle } from "./mock-server.js";
+
+const DEFAULT_FACE = fileURLToPath(new URL("./faces/generated-test-face.jpg", import.meta.url));
 
 function loadFaceBase64(): string {
   const inline = process.env.HUMANAUTHN_FACE_BASE64;
   if (inline && inline.trim() !== "") return inline.trim();
 
-  const path = process.env.HUMANAUTHN_FACE_IMAGE;
-  if (!path) {
-    throw new Error(
-      "No selfie provided. Set HUMANAUTHN_FACE_IMAGE=<path to a face image> " +
-        "(or HUMANAUTHN_FACE_BASE64). Use your own face or a licensed/synthetic one; " +
-        "do not commit the image (fixtures/ and image files are git-ignored).",
-    );
-  }
+  const path = process.env.HUMANAUTHN_FACE_IMAGE ?? DEFAULT_FACE;
   return readFileSync(path).toString("base64");
 }
 

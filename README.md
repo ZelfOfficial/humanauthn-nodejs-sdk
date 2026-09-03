@@ -108,21 +108,28 @@ npm test           # run the vitest suite
 
 ### Testing with a real face
 
-`npm run verify:roundtrip` runs a full enroll → preview → authenticate cycle with
-a real selfie. Supply the image **locally** — it is never committed (face images
-are biometric data, and `fixtures/` plus image files are git-ignored). Use your
-own face, or a licensed/synthetic one; do not use someone else's face.
+`npm run verify:roundtrip` runs a full enroll → preview → authenticate cycle. By
+default it uses the bundled **AI-generated synthetic** face at
+[`examples/faces/generated-test-face.jpg`](examples/faces/generated-test-face.jpg)
+(not a real person; licensed for testing).
 
 ```bash
-# Against a local mock (no credentials, validates the wiring):
-HUMANAUTHN_FACE_IMAGE=./fixtures/me.jpg npm run verify:roundtrip
+# Default synthetic face, against a local mock (no credentials):
+npm run verify:roundtrip
 
 # Against the real Verifik API (charges credits):
-VERIFIK_CLIENT_JWT=<token> HUMANAUTHN_FACE_IMAGE=./fixtures/me.jpg \
-  npm run verify:roundtrip
+VERIFIK_CLIENT_JWT=<token> npm run verify:roundtrip
 ```
 
-You can also pass a pre-encoded image via `HUMANAUTHN_FACE_BASE64`.
+To use a different face, supply it **locally** — it is never committed (face
+images are biometric data, and `fixtures/` plus image files are git-ignored).
+Use your own face or a licensed/synthetic one; do not commit other people's faces.
+
+```bash
+HUMANAUTHN_FACE_IMAGE=./fixtures/me.jpg npm run verify:roundtrip
+# or a pre-encoded image:
+HUMANAUTHN_FACE_BASE64=<base64> npm run verify:roundtrip
+```
 
 The test suite injects a mock transport, so it runs fully offline. The
 [`examples/quickstart.ts`](examples/quickstart.ts) demo runs the real SDK
