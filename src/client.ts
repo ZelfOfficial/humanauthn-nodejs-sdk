@@ -4,6 +4,7 @@ import type {
   DecryptParams,
   DecryptResult,
   EncryptParams,
+  EncryptQrCodeResult,
   EncryptResult,
   FetchLike,
   HumanAuthnClientOptions,
@@ -21,7 +22,7 @@ const IDENTIFIER_PATTERN = /^[a-zA-Z0-9]+$/;
 
 /**
  * Client for the online (HTTP API) version of HumanAuthn, backed by Verifik's
- * `zelf-proof` endpoints.
+ * `human-id` endpoints (the successor to the deprecated `zelf-proof` routes).
  *
  * @example
  * ```ts
@@ -64,12 +65,31 @@ export class HumanAuthnClient {
    * sample and returns a HumanID (`zelfProof`) token for future verification.
    */
   async encrypt(params: EncryptParams): Promise<EncryptResult> {
+    const body = this.buildEncryptBody(params);
+    const data = await this.http.post<Record<string, unknown>>(
+      "/v2/human-id/encrypt",
+      body,
+    );
+    return assertZelfProof(data) as EncryptResult;
+  }
+
+  /** Like {@link encrypt}, but also renders the HumanID as a QR code. */
+  async encryptQrCode(params: EncryptParams): Promise<EncryptQrCodeResult> {
+    const body = this.buildEncryptBody(params);
+    const data = await this.http.post<Record<string, unknown>>(
+      "/v2/human-id/encrypt-qr-code",
+      body,
+    );
+    return assertZelfProof(data) as EncryptQrCodeResult;
+  }
+
+  private buildEncryptBody(params: EncryptParams): Record<string, unknown> {
     requireField(params.faceBase64, "faceBase64", "encrypt");
     requireIdentifier(params.identifier);
     requireStringMap(params.publicData, "publicData", "encrypt");
     requireStringMap(params.metadata, "metadata", "encrypt");
 
-    const body: Record<string, unknown> = {
+    return {
       faceBase64: normalizeImage(params.faceBase64),
       identifier: params.identifier,
       publicData: params.publicData,
@@ -86,19 +106,6 @@ export class HumanAuthnClient {
         : {}),
       ...(params.verifierKey ? { verifierKey: params.verifierKey } : {}),
     };
-
-    const data = await this.http.post<Record<string, unknown>>(
-      "/v2/zelf-proof/encrypt",
-      body,
-    );
-
-    const zelfProof = data.zelfProof;
-    if (typeof zelfProof !== "string" || zelfProof === "") {
-      throw new HumanAuthnConfigError(
-        "Verifik API response did not include a `zelfProof` token.",
-      );
-    }
-    return data as EncryptResult;
   }
 
   /**
@@ -118,16 +125,25 @@ export class HumanAuthnClient {
       ...(params.verifierKey ? { verifierKey: params.verifierKey } : {}),
     };
 
-    return this.http.post<DecryptResult>("/v2/zelf-proof/decrypt", body);
+    return this.http.post<DecryptResult>("/v2/human-id/decrypt", body);
   }
 
   /** Reads the public, non-sensitive data of a HumanID without biometrics. */
   async preview(params: PreviewParams): Promise<PreviewResult> {
     requireField(params.zelfProof, "zelfProof", "preview");
-    return this.http.post<PreviewResult>("/v2/zelf-proof/preview", {
+    return this.http.post<PreviewResult>("/v2/human-id/preview", {
       zelfProof: params.zelfProof,
     });
   }
+}
+
+function assertZelfProof(data: Record<string, unknown>): Record<string, unknown> {
+  if (typeof data.zelfProof !== "string" || data.zelfProof === "") {
+    throw new HumanAuthnConfigError(
+      "Verifik API response did not include a `zelfProof` token.",
+    );
+  }
+  return data;
 }
 
 /** Strip a `data:` URI prefix so callers can pass either form. */

@@ -5,8 +5,10 @@ Node.js SDK for the online (HTTP API) version of [HumanAuthn](https://docs.verif
 HumanAuthn is an authentication + encryption primitive that turns a live
 biometric sample plus stored entropy into a verifiable credential — a
 **HumanID**, represented on the wire as a `zelfProof` token. This SDK wraps the
-online HumanAuthn endpoints (`/v2/zelf-proof/encrypt`, `/decrypt`, `/preview`)
-in a small, strongly-typed, zero-runtime-dependency client.
+current online HumanAuthn endpoints (`/v2/human-id/encrypt`,
+`/encrypt-qr-code`, `/decrypt`, `/preview`) in a small, strongly-typed,
+zero-runtime-dependency client. (The legacy `/v2/zelf-proof/*` routes are
+deprecated and not used.)
 
 ## Installation
 
@@ -46,9 +48,10 @@ The client exposes one method per HumanAuthn endpoint:
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `encrypt(params)` | `POST /v2/zelf-proof/encrypt` | Create a HumanID from a live sample + metadata |
-| `decrypt(params)` | `POST /v2/zelf-proof/decrypt` | Verify a live sample against a HumanID and reveal metadata |
-| `preview(params)` | `POST /v2/zelf-proof/preview` | Read public data without biometrics |
+| `encrypt(params)` | `POST /v2/human-id/encrypt` | Create a HumanID from a live sample + metadata |
+| `encryptQrCode(params)` | `POST /v2/human-id/encrypt-qr-code` | Same as `encrypt`, plus a QR-code rendering |
+| `decrypt(params)` | `POST /v2/human-id/decrypt` | Verify a live sample against a HumanID and reveal metadata |
+| `preview(params)` | `POST /v2/human-id/preview` | Read public data without biometrics |
 
 ### `encrypt(params)`
 

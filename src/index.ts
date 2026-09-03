@@ -14,6 +14,7 @@ export type {
   DecryptParams,
   DecryptResult,
   EncryptParams,
+  EncryptQrCodeResult,
   EncryptResult,
   FetchLike,
   FetchLikeResponse,

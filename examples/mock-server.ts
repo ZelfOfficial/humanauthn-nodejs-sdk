@@ -8,10 +8,11 @@ import {
 import type { AddressInfo } from "node:net";
 
 /**
- * A tiny in-memory stand-in for Verifik's online HumanAuthn (`zelf-proof`) API.
- * It implements just enough of the `/v2/zelf-proof/{encrypt,decrypt,preview}`
- * contract for the SDK to be exercised end to end over real HTTP without
- * needing Verifik credentials or biometric hardware.
+ * A tiny in-memory stand-in for Verifik's online HumanAuthn (`human-id`) API.
+ * It implements just enough of the
+ * `/v2/human-id/{encrypt,encrypt-qr-code,decrypt,preview}` contract for the SDK
+ * to be exercised end to end over real HTTP without needing Verifik credentials
+ * or biometric hardware.
  *
  * A "face" is modeled as the hash of the supplied image bytes: decryption only
  * succeeds when the live sample hashes to the same value used at enrollment,
@@ -53,7 +54,7 @@ export async function startMockServer(): Promise<MockServerHandle> {
     const body = await readJson(req);
     const url = req.url ?? "";
 
-    if (url.endsWith("/encrypt")) {
+    if (url.endsWith("/encrypt") || url.endsWith("/encrypt-qr-code")) {
       for (const field of ["faceBase64", "identifier", "publicData", "metadata"]) {
         if (body[field] === undefined) {
           return send(res, 409, { message: `"${field}" is required`, code: "MissingParameter" });
@@ -70,7 +71,7 @@ export async function startMockServer(): Promise<MockServerHandle> {
         createdAt: new Date().toISOString(),
       });
       const record = store.get(zelfProof)!;
-      return send(res, 200, {
+      const payload: Record<string, unknown> = {
         zelfProof,
         publicData: record.publicData,
         ipfs: {
@@ -79,7 +80,11 @@ export async function startMockServer(): Promise<MockServerHandle> {
           pinned: true,
         },
         credits: { amount: -0.84, status: "approved", category: "usage", code: "zelf-proofs" },
-      });
+      };
+      if (url.endsWith("/encrypt-qr-code")) {
+        payload.qrCode = `data:image/png;base64,${Buffer.from(zelfProof).toString("base64")}`;
+      }
+      return send(res, 200, payload);
     }
 
     if (url.endsWith("/decrypt")) {

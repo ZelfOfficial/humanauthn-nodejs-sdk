@@ -2,7 +2,7 @@
  * Public type definitions for the HumanAuthn Node.js SDK.
  *
  * These mirror the online (HTTP API) HumanAuthn primitive exposed by Verifik
- * (the `zelf-proof` endpoints): an authentication + encryption primitive that
+ * (the `human-id` endpoints): an authentication + encryption primitive that
  * turns a live biometric sample plus stored entropy into a verifiable
  * credential — a HumanID, represented on the wire as a `zelfProof` token.
  *
@@ -95,6 +95,12 @@ export interface EncryptResult {
   credits?: Record<string, unknown>;
   /** Any additional fields returned by the API. */
   [key: string]: unknown;
+}
+
+/** Result of a successful {@link HumanAuthnClient.encryptQrCode}. */
+export interface EncryptQrCodeResult extends EncryptResult {
+  /** The HumanID rendered as a QR code (typically a base64 PNG data URI), when returned. */
+  qrCode?: string;
 }
 
 /** Parameters for the authentication (decrypt) phase. */

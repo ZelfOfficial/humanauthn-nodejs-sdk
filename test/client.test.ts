@@ -52,7 +52,7 @@ describe("encrypt", () => {
 
     expect(calls).toHaveLength(1);
     const call = calls[0]!;
-    expect(call.url).toBe("https://api.example.test/v2/zelf-proof/encrypt");
+    expect(call.url).toBe("https://api.example.test/v2/human-id/encrypt");
     expect(call.method).toBe("POST");
     expect(call.headers.authorization).toBe("Bearer test-jwt");
     expect(call.body).toMatchObject({
@@ -111,6 +111,19 @@ describe("encrypt", () => {
   });
 });
 
+describe("encryptQrCode", () => {
+  it("posts to the QR endpoint and returns the zelfProof and qrCode", async () => {
+    const { fetch, calls } = mockFetch([
+      { body: { zelfProof: "zp_qr", qrCode: "data:image/png;base64,QR==" } },
+    ]);
+    const client = makeClient(fetch);
+    const result = await client.encryptQrCode(validEncrypt);
+    expect(result.zelfProof).toBe("zp_qr");
+    expect(result.qrCode).toBe("data:image/png;base64,QR==");
+    expect(calls[0]!.url).toBe("https://api.example.test/v2/human-id/encrypt-qr-code");
+  });
+});
+
 describe("decrypt", () => {
   it("reveals the identifier and private metadata on success", async () => {
     const { fetch, calls } = mockFetch([
@@ -123,7 +136,7 @@ describe("decrypt", () => {
     expect(result.identifier).toBe("user42");
     expect(result.metadata).toEqual({ userId: "42" });
     expect(result.difficulty).toBe("EASY");
-    expect(calls[0]!.url).toBe("https://api.example.test/v2/zelf-proof/decrypt");
+    expect(calls[0]!.url).toBe("https://api.example.test/v2/human-id/decrypt");
     expect(calls[0]!.body).toMatchObject({
       zelfProof: "zp_abc",
       faceBase64: SAMPLE_IMAGE,
