@@ -11,17 +11,16 @@ export {
   HumanAuthnTimeoutError,
 } from "./errors.js";
 export type {
-  Base64Image,
   DecryptParams,
   DecryptResult,
   EncryptParams,
-  EncryptQrCodeParams,
-  EncryptQrCodeResult,
   EncryptResult,
   FetchLike,
   FetchLikeResponse,
   HumanAuthnClientOptions,
-  Metadata,
+  OperatingSystem,
   PreviewParams,
   PreviewResult,
+  StringMap,
+  Tolerance,
 } from "./types.js";

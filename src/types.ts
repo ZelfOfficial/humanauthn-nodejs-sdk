@@ -1,35 +1,40 @@
 /**
  * Public type definitions for the HumanAuthn Node.js SDK.
  *
- * These mirror the online (HTTP API) HumanAuthn primitive exposed by Verifik:
- * an authentication + encryption primitive that turns a live biometric sample
- * plus stored entropy into a verifiable credential called a HumanID.
+ * These mirror the online (HTTP API) HumanAuthn primitive exposed by Verifik
+ * (the `zelf-proof` endpoints): an authentication + encryption primitive that
+ * turns a live biometric sample plus stored entropy into a verifiable
+ * credential — a HumanID, represented on the wire as a `zelfProof` token.
+ *
+ * @see https://docs.verifik.co/biometrics/humanID-encrypt/
+ * @see https://docs.verifik.co/biometrics/humanID-decrypt/
  */
 
-/** A base64-encoded image payload (data URIs are accepted and normalized). */
-export type Base64Image = string;
+/** Operating system the biometric sample was captured on. */
+export type OperatingSystem = "DESKTOP" | "ANDROID" | "IOS";
 
-/**
- * Arbitrary JSON-serializable metadata. `private` metadata is encrypted inside
- * the HumanID and only revealed on a successful biometric decryption, while
- * `public` metadata is readable by anyone via {@link preview}.
- */
-export type Metadata = Record<string, unknown>;
+/** Liveness anti-spoof strictness. Defaults to `HARDENED` when liveness is required. */
+export type Tolerance = "SOFT" | "REGULAR" | "HARDENED" | "REGULAR_HARD" | "REGULAR_SOFT";
+
+/** String key-value map. Verifik requires `publicData`/`metadata` to be string pairs. */
+export type StringMap = Record<string, string>;
 
 /** Configuration for constructing a {@link HumanAuthnClient}. */
 export interface HumanAuthnClientOptions {
-  /** API token issued by Verifik. Required for every request. */
+  /**
+   * Verifik API token (a client JWT, e.g. the `VERIFIK_CLIENT_JWT` secret).
+   * Sent as `Authorization: Bearer <apiKey>`. Required.
+   */
   apiKey: string;
-  /** Base URL of the HumanAuthn API. Defaults to the Verifik production host. */
+  /** Base URL of the Verifik API. Defaults to `https://api.verifik.co`. */
   baseUrl?: string;
+  /** Default operating system applied to requests that don't set one. Defaults to `DESKTOP`. */
+  defaultOs?: OperatingSystem;
   /** Per-request timeout in milliseconds. Defaults to 30000. */
   timeoutMs?: number;
   /** Number of automatic retries for transient (5xx / network) failures. Defaults to 2. */
   maxRetries?: number;
-  /**
-   * Custom fetch implementation. Defaults to the global `fetch`. Useful for
-   * testing or for pinning a specific HTTP agent.
-   */
+  /** Custom fetch implementation. Defaults to the global `fetch`. */
   fetch?: FetchLike;
   /** Extra headers merged into every request. */
   defaultHeaders?: Record<string, string>;
@@ -54,67 +59,96 @@ export interface FetchLikeResponse {
 
 /** Parameters for the enrollment (encrypt) phase. */
 export interface EncryptParams {
-  /** Live biometric sample as a base64-encoded image. */
-  image: Base64Image;
-  /** Private metadata encrypted into the HumanID. */
-  metadata?: Metadata;
-  /** Public metadata, readable without biometric verification. */
-  publicMetadata?: Metadata;
-  /** Optional additional password layer required to decrypt later. */
+  /** Base64-encoded facial image (raw base64 or a `data:` URI). */
+  faceBase64: string;
+  /** Unique, alphanumeric identifier (no spaces or special characters). */
+  identifier: string;
+  /** Public data stored with the HumanID (string key-value pairs). */
+  publicData: StringMap;
+  /** Private metadata encrypted into the HumanID (string key-value pairs). */
+  metadata: StringMap;
+  /** Operating system of the capture. Defaults to the client's `defaultOs`. */
+  os?: OperatingSystem;
+  /** Require a live face when decrypting later. Defaults to `false`. */
+  requireLiveness?: boolean;
+  /** Require a live face when creating the HumanID. */
+  livenessDetectionPriorCreation?: boolean;
+  /** Liveness anti-spoof strictness. */
+  tolerance?: Tolerance;
+  /** Optional password required to decrypt later. */
   password?: string;
-  /** Require liveness detection on the provided sample. Defaults to `true`. */
-  liveness?: boolean;
+  /** Optional reference face image (base64). */
+  referenceFaceBase64?: string;
+  /** Optional verifier key. */
+  verifierKey?: string;
 }
 
 /** Result of a successful {@link HumanAuthnClient.encrypt}. */
 export interface EncryptResult {
-  /** Opaque HumanID token used for later verification. */
-  humanId: string;
-  /** Public metadata stored alongside the credential, if any. */
-  publicMetadata?: Metadata;
-  /** Server-reported creation timestamp (ISO 8601), when available. */
-  createdAt?: string;
-}
-
-/** Parameters for the {@link HumanAuthnClient.encryptQrCode} call. */
-export type EncryptQrCodeParams = EncryptParams;
-
-/** Result of a successful {@link HumanAuthnClient.encryptQrCode}. */
-export interface EncryptQrCodeResult extends EncryptResult {
-  /** The HumanID rendered as a QR code (base64-encoded PNG data URI). */
-  qrCode: string;
+  /** The HumanID token; present it to {@link HumanAuthnClient.decrypt} to authenticate. */
+  zelfProof: string;
+  /** IPFS storage metadata for the HumanID, when returned. */
+  ipfs?: Record<string, unknown>;
+  /** Public data echoed back by the API, when returned. */
+  publicData?: StringMap;
+  /** Credit accounting for the operation, when returned. */
+  credits?: Record<string, unknown>;
+  /** Any additional fields returned by the API. */
+  [key: string]: unknown;
 }
 
 /** Parameters for the authentication (decrypt) phase. */
 export interface DecryptParams {
-  /** HumanID token returned from a previous encrypt call. */
-  humanId: string;
-  /** Live biometric sample as a base64-encoded image. */
-  image: Base64Image;
+  /** HumanID token returned by {@link HumanAuthnClient.encrypt}. */
+  zelfProof: string;
+  /** Live base64-encoded facial image of the HumanID owner. */
+  faceBase64: string;
+  /** Operating system of the capture. Defaults to the client's `defaultOs`. */
+  os?: OperatingSystem;
   /** Password, if the HumanID was created with one. */
   password?: string;
+  /** Optional verifier key. */
+  verifierKey?: string;
 }
 
-/** Result of {@link HumanAuthnClient.decrypt}. */
+/**
+ * Result of a successful {@link HumanAuthnClient.decrypt}. Successful decryption
+ * *is* the authentication: it only occurs when the live face reconstructs the
+ * key, at which point the private metadata is revealed.
+ */
 export interface DecryptResult {
-  /** Whether the live sample reconstructed the key and authenticated the user. */
-  authenticated: boolean;
+  /** Identifier the HumanID was created with. */
+  identifier?: string;
   /** Private metadata revealed on successful authentication. */
-  metadata?: Metadata;
+  metadata?: StringMap;
+  /** Public data stored with the HumanID. */
+  publicData?: StringMap;
+  /** Cropped image of the verified face, when returned. */
+  faceCropBase64?: string;
+  /** Verification difficulty (`EASY`, `MEDIUM`, `HARD`), when returned. */
+  difficulty?: string;
+  /** Whether liveness was required for this HumanID. */
+  requiredLiveness?: boolean;
+  /** Whether credits were charged for this verification. */
+  charged?: boolean;
+  /** Any additional fields returned by the API. */
+  [key: string]: unknown;
 }
 
 /** Parameters for {@link HumanAuthnClient.preview}. */
 export interface PreviewParams {
   /** HumanID token to inspect. */
-  humanId: string;
+  zelfProof: string;
 }
 
 /** Result of {@link HumanAuthnClient.preview}. */
 export interface PreviewResult {
-  /** Public metadata configured by the developer at encryption time. */
-  publicMetadata?: Metadata;
-  /** Whether the HumanID requires a password in addition to biometrics. */
+  /** Public data configured by the developer at encryption time. */
+  publicData?: StringMap;
+  /** Whether the HumanID requires liveness. */
+  requiredLiveness?: boolean;
+  /** Whether the HumanID is password protected. */
   passwordProtected?: boolean;
-  /** Server-reported creation timestamp (ISO 8601), when available. */
-  createdAt?: string;
+  /** Any additional fields returned by the API. */
+  [key: string]: unknown;
 }

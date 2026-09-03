@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   createServer,
   type IncomingMessage,
@@ -8,20 +8,23 @@ import {
 import type { AddressInfo } from "node:net";
 
 /**
- * A tiny in-memory stand-in for the online HumanAuthn API. It implements just
- * enough of the `/encrypt`, `/encrypt-qr-code`, `/decrypt`, and `/preview`
+ * A tiny in-memory stand-in for Verifik's online HumanAuthn (`zelf-proof`) API.
+ * It implements just enough of the `/v2/zelf-proof/{encrypt,decrypt,preview}`
  * contract for the SDK to be exercised end to end over real HTTP without
  * needing Verifik credentials or biometric hardware.
  *
  * A "face" is modeled as the hash of the supplied image bytes: decryption only
  * succeeds when the live sample hashes to the same value used at enrollment,
- * mirroring HumanAuthn's "the right face reconstructs the key" behavior.
+ * mirroring HumanAuthn's "the right face reconstructs the key" behavior. A
+ * mismatched face fails key reconstruction, which the API surfaces as an error.
  */
-interface StoredHumanId {
+interface StoredProof {
   faceHash: string;
-  metadata?: Record<string, unknown>;
-  publicMetadata?: Record<string, unknown>;
+  identifier: string;
+  metadata: Record<string, string>;
+  publicData: Record<string, string>;
   password?: string;
+  requireLiveness: boolean;
   createdAt: string;
 }
 
@@ -31,67 +34,94 @@ export interface MockServerHandle {
   close: () => Promise<void>;
 }
 
-const API_KEY = "demo-token";
+const API_KEY = "demo-jwt-token";
 
 export async function startMockServer(): Promise<MockServerHandle> {
-  const store = new Map<string, StoredHumanId>();
-  let counter = 0;
+  const store = new Map<string, StoredProof>();
 
   const server: Server = createServer((req, res) => {
     void handle(req, res).catch((err) => {
-      send(res, 500, { message: `mock server error: ${String(err)}` });
+      send(res, 500, { message: `mock server error: ${String(err)}`, code: "ERROR" });
     });
   });
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const auth = req.headers.authorization;
-    if (auth !== `Bearer ${API_KEY}`) {
-      return send(res, 401, { message: "Invalid API token", code: "unauthorized" });
+    if (req.headers.authorization !== `Bearer ${API_KEY}`) {
+      return send(res, 401, { message: "Authentication required", code: "UNAUTHORIZED" });
     }
 
     const body = await readJson(req);
     const url = req.url ?? "";
 
-    if (url.endsWith("/encrypt") || url.endsWith("/encrypt-qr-code")) {
-      const humanId = `hid_${(++counter).toString(36)}_${randomSuffix()}`;
-      store.set(humanId, {
-        faceHash: hashFace(body.image),
-        metadata: body.metadata as Record<string, unknown> | undefined,
-        publicMetadata: body.publicMetadata as Record<string, unknown> | undefined,
+    if (url.endsWith("/encrypt")) {
+      for (const field of ["faceBase64", "identifier", "publicData", "metadata"]) {
+        if (body[field] === undefined) {
+          return send(res, 409, { message: `"${field}" is required`, code: "MissingParameter" });
+        }
+      }
+      const zelfProof = randomBytes(48).toString("base64");
+      store.set(zelfProof, {
+        faceHash: hashFace(body.faceBase64),
+        identifier: String(body.identifier),
+        metadata: body.metadata as Record<string, string>,
+        publicData: body.publicData as Record<string, string>,
         password: body.password as string | undefined,
+        requireLiveness: Boolean(body.requireLiveness),
         createdAt: new Date().toISOString(),
       });
-      const record = store.get(humanId)!;
-      const payload: Record<string, unknown> = {
-        humanId,
-        publicMetadata: record.publicMetadata,
-        createdAt: record.createdAt,
-      };
-      if (url.endsWith("/encrypt-qr-code")) {
-        payload.qrCode = `data:image/png;base64,${Buffer.from(humanId).toString("base64")}`;
-      }
-      return send(res, 200, payload);
+      const record = store.get(zelfProof)!;
+      return send(res, 200, {
+        zelfProof,
+        publicData: record.publicData,
+        ipfs: {
+          url: "https://mock.ipfs.local/ipfs/bafyMockHash",
+          IpfsHash: "bafyMockHash",
+          pinned: true,
+        },
+        credits: { amount: -0.84, status: "approved", category: "usage", code: "zelf-proofs" },
+      });
     }
 
     if (url.endsWith("/decrypt")) {
-      const record = store.get(String(body.humanId));
-      if (!record) return send(res, 404, { message: "HumanID not found", code: "not_found" });
-      const faceMatches = record.faceHash === hashFace(body.image);
+      if (body.zelfProof === undefined) {
+        return send(res, 409, { message: '"zelfProof" is required', code: "MissingParameter" });
+      }
+      if (body.faceBase64 === undefined) {
+        return send(res, 409, { message: '"faceBase64" is required', code: "MissingParameter" });
+      }
+      const record = store.get(String(body.zelfProof));
+      if (!record) {
+        return send(res, 409, { message: "Invalid zelfProof", code: "InvalidProof" });
+      }
+      const faceMatches = record.faceHash === hashFace(body.faceBase64);
       const passwordMatches = (record.password ?? undefined) === (body.password ?? undefined);
-      const authenticated = faceMatches && passwordMatches;
+      if (!faceMatches || !passwordMatches) {
+        // Key reconstruction failed: decryption is impossible.
+        return send(res, 409, {
+          message: "Face verification failed",
+          code: "FaceVerificationFailed",
+        });
+      }
       return send(res, 200, {
-        authenticated,
-        metadata: authenticated ? record.metadata : undefined,
+        identifier: record.identifier,
+        metadata: record.metadata,
+        publicData: record.publicData,
+        faceCropBase64: "/9j/mockcrop",
+        difficulty: "EASY",
+        requiredLiveness: record.requireLiveness,
+        charged: false,
       });
     }
 
     if (url.endsWith("/preview")) {
-      const record = store.get(String(body.humanId));
-      if (!record) return send(res, 404, { message: "HumanID not found", code: "not_found" });
+      const record = store.get(String(body.zelfProof));
+      if (!record) {
+        return send(res, 409, { message: "Invalid zelfProof", code: "InvalidProof" });
+      }
       return send(res, 200, {
-        publicMetadata: record.publicMetadata,
+        publicData: record.publicData,
+        requiredLiveness: record.requireLiveness,
         passwordProtected: Boolean(record.password),
-        createdAt: record.createdAt,
       });
     }
 
@@ -115,10 +145,6 @@ function hashFace(image: unknown): string {
   return createHash("sha256").update(String(image)).digest("hex");
 }
 
-function randomSuffix(): string {
-  return Math.random().toString(36).slice(2, 8);
-}
-
 function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -137,7 +163,6 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
-  const raw = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json" });
-  res.end(raw);
+  res.end(JSON.stringify(body));
 }

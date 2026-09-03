@@ -43,6 +43,7 @@
     "test:watch": "vitest",
     "example": "tsx examples/quickstart.ts",
     "demo": "tsx examples/quickstart.ts",
+    "verify:real": "tsx examples/verify-real-api.ts",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {

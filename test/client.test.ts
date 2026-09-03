@@ -8,12 +8,19 @@ import { mockFetch, SAMPLE_IMAGE } from "./helpers.js";
 
 function makeClient(fetch: ReturnType<typeof mockFetch>["fetch"]) {
   return new HumanAuthnClient({
-    apiKey: "test-token",
+    apiKey: "test-jwt",
     baseUrl: "https://api.example.test",
     fetch,
     maxRetries: 0,
   });
 }
+
+const validEncrypt = {
+  faceBase64: SAMPLE_IMAGE,
+  identifier: "user42",
+  publicData: { org: "zelf" },
+  metadata: { userId: "42" },
+};
 
 describe("HumanAuthnClient construction", () => {
   it("throws when no apiKey is provided", () => {
@@ -27,125 +34,152 @@ describe("HumanAuthnClient construction", () => {
 });
 
 describe("encrypt", () => {
-  it("sends auth header, normalizes body, and returns the HumanID", async () => {
+  it("sends auth header, normalizes the body, and returns the zelfProof", async () => {
     const { fetch, calls } = mockFetch([
-      { body: { humanId: "hid_123", createdAt: "2026-01-01T00:00:00Z" } },
+      { body: { zelfProof: "zp_abc", credits: { amount: -0.84 } } },
     ]);
     const client = makeClient(fetch);
 
     const result = await client.encrypt({
-      image: `data:image/png;base64,${SAMPLE_IMAGE}`,
-      metadata: { userId: "42" },
-      publicMetadata: { org: "zelf" },
+      ...validEncrypt,
+      faceBase64: `data:image/png;base64,${SAMPLE_IMAGE}`,
+      requireLiveness: true,
+      tolerance: "HARDENED",
     });
 
-    expect(result.humanId).toBe("hid_123");
-    expect(result.createdAt).toBe("2026-01-01T00:00:00Z");
+    expect(result.zelfProof).toBe("zp_abc");
+    expect(result.credits).toEqual({ amount: -0.84 });
 
     expect(calls).toHaveLength(1);
     const call = calls[0]!;
-    expect(call.url).toBe("https://api.example.test/v2/human-authn/encrypt");
+    expect(call.url).toBe("https://api.example.test/v2/zelf-proof/encrypt");
     expect(call.method).toBe("POST");
-    expect(call.headers.authorization).toBe("Bearer test-token");
-    expect(call.headers["content-type"]).toBe("application/json");
-    // The data URI prefix must be stripped before sending.
+    expect(call.headers.authorization).toBe("Bearer test-jwt");
     expect(call.body).toMatchObject({
-      image: SAMPLE_IMAGE,
-      liveness: true,
+      faceBase64: SAMPLE_IMAGE, // data URI prefix stripped
+      identifier: "user42",
+      publicData: { org: "zelf" },
       metadata: { userId: "42" },
-      publicMetadata: { org: "zelf" },
+      os: "DESKTOP", // default applied
+      requireLiveness: true,
+      tolerance: "HARDENED",
     });
   });
 
-  it("requires an image", async () => {
-    const { fetch } = mockFetch([{ body: {} }]);
-    const client = makeClient(fetch);
-    // @ts-expect-error missing image
-    await expect(client.encrypt({})).rejects.toBeInstanceOf(HumanAuthnConfigError);
+  it("honors a custom default OS", async () => {
+    const { fetch, calls } = mockFetch([{ body: { zelfProof: "zp" } }]);
+    const client = new HumanAuthnClient({
+      apiKey: "jwt",
+      baseUrl: "https://api.example.test",
+      fetch,
+      defaultOs: "IOS",
+    });
+    await client.encrypt(validEncrypt);
+    expect(calls[0]!.body).toMatchObject({ os: "IOS" });
   });
 
-  it("throws when the API omits a HumanID", async () => {
-    const { fetch } = mockFetch([{ body: { publicMetadata: {} } }]);
+  it("requires a faceBase64", async () => {
+    const { fetch } = mockFetch([{ body: {} }]);
     const client = makeClient(fetch);
-    await expect(client.encrypt({ image: SAMPLE_IMAGE })).rejects.toBeInstanceOf(
+    // @ts-expect-error missing faceBase64
+    await expect(client.encrypt({ ...validEncrypt, faceBase64: undefined })).rejects.toBeInstanceOf(
       HumanAuthnConfigError,
     );
   });
-});
 
-describe("encryptQrCode", () => {
-  it("returns the QR code alongside the HumanID", async () => {
-    const { fetch } = mockFetch([
-      { body: { humanId: "hid_qr", qrCode: "data:image/png;base64,QR==" } },
-    ]);
+  it("rejects a non-alphanumeric identifier", async () => {
+    const { fetch } = mockFetch([{ body: {} }]);
     const client = makeClient(fetch);
-    const result = await client.encryptQrCode({ image: SAMPLE_IMAGE });
-    expect(result.humanId).toBe("hid_qr");
-    expect(result.qrCode).toBe("data:image/png;base64,QR==");
+    await expect(
+      client.encrypt({ ...validEncrypt, identifier: "user 42!" }),
+    ).rejects.toBeInstanceOf(HumanAuthnConfigError);
+  });
+
+  it("rejects non-string metadata values", async () => {
+    const { fetch } = mockFetch([{ body: {} }]);
+    const client = makeClient(fetch);
+    await expect(
+      // @ts-expect-error metadata must be string values
+      client.encrypt({ ...validEncrypt, metadata: { userId: 42 } }),
+    ).rejects.toBeInstanceOf(HumanAuthnConfigError);
+  });
+
+  it("throws when the API omits a zelfProof", async () => {
+    const { fetch } = mockFetch([{ body: { publicData: {} } }]);
+    const client = makeClient(fetch);
+    await expect(client.encrypt(validEncrypt)).rejects.toBeInstanceOf(HumanAuthnConfigError);
   });
 });
 
 describe("decrypt", () => {
-  it("reports authentication success and reveals metadata", async () => {
+  it("reveals the identifier and private metadata on success", async () => {
     const { fetch, calls } = mockFetch([
-      { body: { authenticated: true, metadata: { userId: "42" } } },
+      { body: { identifier: "user42", metadata: { userId: "42" }, difficulty: "EASY" } },
     ]);
     const client = makeClient(fetch);
 
-    const result = await client.decrypt({ humanId: "hid_123", image: SAMPLE_IMAGE });
+    const result = await client.decrypt({ zelfProof: "zp_abc", faceBase64: SAMPLE_IMAGE });
 
-    expect(result.authenticated).toBe(true);
+    expect(result.identifier).toBe("user42");
     expect(result.metadata).toEqual({ userId: "42" });
-    expect(calls[0]!.url).toBe("https://api.example.test/v2/human-authn/decrypt");
+    expect(result.difficulty).toBe("EASY");
+    expect(calls[0]!.url).toBe("https://api.example.test/v2/zelf-proof/decrypt");
+    expect(calls[0]!.body).toMatchObject({
+      zelfProof: "zp_abc",
+      faceBase64: SAMPLE_IMAGE,
+      os: "DESKTOP",
+    });
   });
 
-  it("reports a failed match", async () => {
-    const { fetch } = mockFetch([{ body: { authenticated: false } }]);
+  it("surfaces a failed match as an API error", async () => {
+    const { fetch } = mockFetch([
+      { status: 409, body: { message: "Face verification failed", code: "FaceVerificationFailed" } },
+    ]);
     const client = makeClient(fetch);
-    const result = await client.decrypt({ humanId: "hid_123", image: SAMPLE_IMAGE });
-    expect(result.authenticated).toBe(false);
-    expect(result.metadata).toBeUndefined();
+    await expect(
+      client.decrypt({ zelfProof: "zp_abc", faceBase64: SAMPLE_IMAGE }),
+    ).rejects.toBeInstanceOf(HumanAuthnApiError);
   });
 
-  it("requires a humanId", async () => {
+  it("requires a zelfProof", async () => {
     const { fetch } = mockFetch([{ body: {} }]);
     const client = makeClient(fetch);
-    // @ts-expect-error missing humanId
-    await expect(client.decrypt({ image: SAMPLE_IMAGE })).rejects.toBeInstanceOf(
+    // @ts-expect-error missing zelfProof
+    await expect(client.decrypt({ faceBase64: SAMPLE_IMAGE })).rejects.toBeInstanceOf(
       HumanAuthnConfigError,
     );
   });
 });
 
 describe("preview", () => {
-  it("returns public metadata without biometrics", async () => {
+  it("returns public data without biometrics", async () => {
     const { fetch, calls } = mockFetch([
-      { body: { publicMetadata: { org: "zelf" }, passwordProtected: true } },
+      { body: { publicData: { org: "zelf" }, passwordProtected: true } },
     ]);
     const client = makeClient(fetch);
-    const result = await client.preview({ humanId: "hid_123" });
-    expect(result.publicMetadata).toEqual({ org: "zelf" });
+    const result = await client.preview({ zelfProof: "zp_abc" });
+    expect(result.publicData).toEqual({ org: "zelf" });
     expect(result.passwordProtected).toBe(true);
-    expect(calls[0]!.body).toEqual({ humanId: "hid_123" });
+    expect(calls[0]!.body).toEqual({ zelfProof: "zp_abc" });
   });
 });
 
 describe("error handling", () => {
   it("maps a 401 to an auth error", async () => {
     const { fetch } = mockFetch([
-      { status: 401, body: { message: "Invalid token", code: "unauthorized" } },
+      { status: 401, body: { message: "Authentication required", code: "UNAUTHORIZED" } },
     ]);
     const client = makeClient(fetch);
     try {
-      await client.encrypt({ image: SAMPLE_IMAGE });
+      await client.encrypt(validEncrypt);
       throw new Error("expected to throw");
     } catch (err) {
       expect(err).toBeInstanceOf(HumanAuthnApiError);
       const apiErr = err as HumanAuthnApiError;
       expect(apiErr.status).toBe(401);
-      expect(apiErr.code).toBe("unauthorized");
+      expect(apiErr.code).toBe("UNAUTHORIZED");
       expect(apiErr.isAuthError).toBe(true);
-      expect(apiErr.message).toBe("Invalid token");
+      expect(apiErr.message).toBe("Authentication required");
     }
   });
 });
