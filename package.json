@@ -9,6 +9,10 @@
     "type": "git",
     "url": "https://github.com/ZelfOfficial/humanauthn-nodejs-sdk.git"
   },
+  "homepage": "https://github.com/ZelfOfficial/humanauthn-nodejs-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/ZelfOfficial/humanauthn-nodejs-sdk/issues"
+  },
   "keywords": [
     "humanauthn",
     "verifik",
