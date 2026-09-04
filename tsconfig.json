@@ -21,5 +21,6 @@
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "test", "examples"]
+  "include": ["src", "test", "examples"],
+  "exclude": ["node_modules", "dist", "examples/integrations"]
 }

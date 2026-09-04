@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HumanAuthn - capture a face</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; }
+      video, canvas { width: 100%; border-radius: 8px; background: #000; }
+      button, input { font-size: 1rem; padding: 0.5rem 0.75rem; margin: 0.25rem 0; }
+      #status { white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Capture a face</h1>
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" hidden></canvas>
+
+    <input id="userId" placeholder="userId (alphanumeric)" value="user42" />
+    <div>
+      <button id="enroll">Enroll</button>
+      <button id="authenticate">Authenticate</button>
+    </div>
+    <p id="status"></p>
+
+    <script>
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const statusEl = document.getElementById("status");
+
+      // 1) Ask for the webcam.
+      navigator.mediaDevices
+        .getUserMedia({ video: { facingMode: "user" } })
+        .then((stream) => (video.srcObject = stream))
+        .catch((err) => (statusEl.textContent = "Camera error: " + err));
+
+      // 2) Grab the current frame as a base64 JPEG (no data: prefix).
+      function captureFaceBase64() {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext("2d").drawImage(video, 0, 0);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+        return dataUrl.split(",")[1]; // strip "data:image/jpeg;base64,"
+      }
+
+      // 3) POST the face to YOUR backend. The Verifik JWT stays on the server.
+      async function send(path) {
+        const userId = document.getElementById("userId").value.trim();
+        const faceBase64 = captureFaceBase64();
+        statusEl.textContent = "Sending...";
+        const res = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, faceBase64 }),
+        });
+        statusEl.textContent = res.status + " " + (await res.text());
+      }
+
+      document.getElementById("enroll").onclick = () => send("/human-id/enroll");
+      document.getElementById("authenticate").onclick = () =>
+        send("/human-id/authenticate");
+    </script>
+  </body>
+</html>
