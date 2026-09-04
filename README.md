@@ -10,6 +10,20 @@ current online HumanAuthn endpoints (`/v2/human-id/encrypt`,
 zero-runtime-dependency client. (The legacy `/v2/zelf-proof/*` routes are
 deprecated and not used.)
 
+## How it works
+
+- Enrollment (`encrypt`): capture a live face, bind it to your `publicData` and
+  private `metadata`, and receive a `zelfProof` HumanID token. Store that token
+  (for example on the user record). HumanAuthn keeps no biometric template.
+- Authentication (`decrypt`): send a fresh face plus the stored `zelfProof`. Only
+  the enrolled face reconstructs the key, so a successful decrypt *is* the
+  authentication, and it returns the private `metadata`.
+- Preview (`preview`): read the public, non-sensitive data of a HumanID without
+  any biometric input.
+
+See the [HumanAuthn overview](https://docs.verifik.co/biometrics/humanauthn/) for
+the underlying primitive.
+
 ## Installation
 
 ```bash
@@ -18,6 +32,60 @@ npm install humanauthn-nodejs-sdk
 
 Requires Node.js 18+ (uses the built-in global `fetch`). The development
 environment targets the latest Node.js (26.x).
+
+## Authentication (Verifik JWT)
+
+Every request authenticates with a **Verifik client JWT** (a bearer token). You
+pass it as `apiKey`; the SDK sends it as `Authorization: Bearer <token>`. Keep it
+in an environment variable and **server-side only** — never ship it to a browser.
+
+```bash
+# .env
+VERIFIK_CLIENT_JWT=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVC...
+```
+
+Without a valid token, real API calls fail with `401`
+(`HumanAuthnApiError` with `.isAuthError === true`).
+
+### Getting a token
+
+- Dashboard (recommended): sign in to the Verifik web app at
+  [ai.verifik.co](https://ai.verifik.co) and copy your client access token.
+- API (email OTP): request a code, then confirm it — see
+  [API key access via email](https://docs.verifik.co/authentication/api-key-access-via-email/).
+
+  ```bash
+  # 1) Request an OTP by email
+  curl -X POST "https://api.verifik.co/v2/projects/email-login?email=you@example.com" \
+    -H "Accept: application/json"
+
+  # 2) Confirm it -> { data: { accessToken, tokenType: "bearer" } }
+  curl -X POST "https://api.verifik.co/v2/projects/email-login/confirm" \
+    -H "Content-Type: application/json" \
+    -d '{ "email": "you@example.com", "otp": "123456" }'
+  ```
+
+  (The OTP can be delivered by email/SMS/WhatsApp depending on your account, so
+  this flow is interactive — the SDK does not automate it. Generate the token
+  once and paste it into `VERIFIK_CLIENT_JWT`.)
+
+### Lifetime, renewal, and expiry
+
+- A token is valid for about **30 days**.
+- Renew a still-valid token (no re-login) via
+  [`/v2/auth/session`](https://docs.verifik.co/authentication/renew-your-token-jwt/).
+  `expiresIn` is measured in **months** (`1` = one month):
+
+  ```bash
+  curl "https://api.verifik.co/v2/auth/session?origin=refresh&expiresIn=1" \
+    -H "Authorization: Bearer $VERIFIK_CLIENT_JWT"
+  # -> { "accessToken": "<new-jwt>", "tokenType": "bearer" }
+  ```
+
+- Once a token has **expired** it can no longer be renewed — generate a new one
+  (dashboard or email OTP) and update `VERIFIK_CLIENT_JWT`.
+- Treat the token like a password: if it leaks, re-issue it and replace the env
+  var.
 
 ## Quick start
 
@@ -93,6 +161,48 @@ All errors extend `HumanAuthnError`:
 - `HumanAuthnApiError` — non-2xx response (`.status`, `.code`, `.isAuthError`, `.isRetryable`).
 - `HumanAuthnTimeoutError` — request exceeded `timeoutMs`.
 
+## Costs and credits
+
+Verifik bills through a shared **credit** system; you buy and monitor credits in
+the [dashboard](https://ai.verifik.co). Approximate HumanAuthn usage:
+
+| Operation | Typical cost |
+| --- | --- |
+| `encrypt` / `encryptQrCode` (create a HumanID) | ~0.84 credits per HumanID |
+| `decrypt` (authenticate) | billed monthly per active user, not per call |
+| `preview` | small per-call charge |
+
+Each successful `encrypt` returns a `credits` object describing the charge. Exact
+pricing and inclusions depend on your plan, so check your
+[dashboard](https://ai.verifik.co) and the
+[credits docs](https://docs.verifik.co/resources/credits). Credits can expire, so
+purchase them close to when you plan to use them. (Costs above are indicative and
+may change — treat the dashboard as the source of truth.)
+
+## Integrations
+
+Reference examples live in
+[`examples/integrations/`](examples/integrations/). They import the published
+package and keep the Verifik JWT **server-side**:
+
+- [Express](examples/integrations/express) — `enroll` + `authenticate` routes.
+- [Next.js](examples/integrations/nextjs) — App Router route handlers.
+- [Browser capture](examples/integrations/browser) — grab `faceBase64` from a
+  webcam and POST it to your backend.
+
+Typical flow: the browser captures a face → your backend calls `encrypt` (enroll)
+or `decrypt` (authenticate) with your JWT → you store the returned `zelfProof` on
+the user and issue your own session.
+
+## Security and privacy
+
+- HumanAuthn stores **no biometric templates** — authentication reconstructs an
+  ephemeral key from the live face plus stored entropy.
+- Keep the Verifik JWT server-side; never expose it to the browser or commit it.
+- Do not log `faceBase64`, `metadata`, or the JWT, and send everything over HTTPS.
+- Treat face images as sensitive biometric data; don't persist them unless you
+  have a lawful basis and user consent.
+
 ## Development
 
 ```bash
@@ -140,6 +250,14 @@ credentials. To target the real API, set your Verifik client JWT:
 ```bash
 VERIFIK_CLIENT_JWT=<token> npm run demo
 ```
+
+## Resources
+
+- Dashboard / web app: [ai.verifik.co](https://ai.verifik.co)
+- HumanAuthn docs: [docs.verifik.co/biometrics/humanauthn](https://docs.verifik.co/biometrics/humanauthn/)
+- Credits and pricing: [docs.verifik.co/resources/credits](https://docs.verifik.co/resources/credits)
+- Authentication: [API key via email](https://docs.verifik.co/authentication/api-key-access-via-email/) and [renew token](https://docs.verifik.co/authentication/renew-your-token-jwt/)
+- Package on JSR: [@zelf/humanauthn](https://jsr.io/@zelf/humanauthn)
 
 ## License
 
